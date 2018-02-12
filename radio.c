@@ -1,7 +1,8 @@
-#include <si4735.h>
+#include "si4735.h"
   // using hardware twi 
-#include <i2cmaster.h>
-#include <uart.h>
+#include "i2cmaster.h"
+#include "uart.h"
+#include "debug.h"
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -12,7 +13,6 @@
 
 #include <stdbool.h>
 #include <stdarg.h>
-#include <stdio.h>
 
 #define UART_BAUD_RATE 38400  // Baudrate
 
@@ -85,7 +85,7 @@ int32_t freq2position(uint16_t fre) {
 
 
 uint8_t get_command(char * buf) {
-    uart_puts("in get command\n");
+    debputs(DEBUG, "in get command");
     uint8_t command = 0xfe;
         if (memcmp(buf, "/radio/frequency?", 17) == 0) {
             command = 4;
@@ -95,7 +95,19 @@ uint8_t get_command(char * buf) {
             command = 1;
         } else if (memcmp(buf, "/midi", 5) == 0) {
             command = 3;
-        }
+        } else if (memcmp(buf, "/debug/on",9) == 0) {
+            command = 5;
+        } else if (memcmp(buf, "/debug/off", 10) == 0) {
+            command = 6;
+        } else if (memcmp(buf, "/radio/power/up", 15) == 0) {
+            command = 7;
+        } else if (memcmp(buf, "/radio/power/down", 17) == 0) {
+            command = 8;
+        } else if (memcmp(buf, "/radio/seek/up", 14) == 0) {
+            command = 9;
+        } else if (memcmp(buf, "/radio/seek/down", 16) == 0) {
+            command = 10;
+        }   
 
     return command;
 } 
@@ -155,9 +167,9 @@ uint8_t parsechar(char c) {
             p++;
             if (buf[paramliststart +p ] != '\0') osc_state = rec_param;
             else {
-                debputs(0, "sc_done\n");
+                debputs(DEBUG, "sc_done");
     // XXX WTF ! OHNE DEM GEHTS NICHT!
-                _delay_ms(100);
+                //_delay_ms(100);
                 done = command;
                 osc_state = buf_empty;
             }
@@ -189,27 +201,11 @@ volatile int8_t direction;
 volatile int32_t position = 0;
 volatile int32_t endpos = 0;
 
-void debputs(uint8_t debug, char * s) {
-    uart_puts(s);
-    uart_putc('\n');
-}
-
-void debprintf(uint8_t debug, char * fs, ...) {
-    char buffer[256];
-    va_list argumente;
-    va_start(argumente, fs);
-    vsnprintf( (char *) &buffer, 256, fs, argumente);
-    va_end(argumente);
-    uart_puts(buffer);
-    uart_putc('\n');
-}
-
-
 void turn(uint16_t freq) {
     char buffer[10];
 
-    debputs(0, "in turn");
-
+    debputs(DEBUG, "in turn");
+    //_delay_ms(100);
     cli();
     endpos = freq2position(freq);
     stop_encoder();
@@ -217,7 +213,8 @@ void turn(uint16_t freq) {
     if (direction == -1) uart_puts("-1 \n");
     sei();
 
-    debprintf(0, "endpos %i, position %i", endpos, position);
+    debprintf(DEBUG, "endpos %i, position %i", endpos, position);
+    //_delay_ms(100);
 
     PORTB |= (1<< PD5);
     cli();
@@ -238,7 +235,7 @@ void createOSCMessage(char * command, char * paramlist, ...) {
     va_start(argumente, paramlist);
     anzahl = strlen(paramlist);
     
-    char buf[256];
+    char buf[128];
     commandlength = strlen(command);
     strcpy(buf, command);
     an = anzahlnulls(commandlength);
@@ -266,30 +263,29 @@ void createOSCMessage(char * command, char * paramlist, ...) {
         }
     }
     va_end(argumente);
+
     //commandlength += 4;
     //uart_puts("OSC Generierung..");
-
-
-
     //uart_putc('\n');
 /*
     utoa(buffer, i, 10);
     uart_puts(buffer);
     uart_putc('\n');
 */
+
     for (i = 0; i < commandlength; i++) uart_putc(buf[i]);
     uart_putc('\n');
 }
 
 
 void setandsendfreq(uint16_t freq) {
-    //getfreq();
-    //_delay_ms(100);
-    //setfreq(freq);
-    //_delay_ms(100);
-    //freq = getfreq();
-    //createOSCMessage("/radio/frequency", "i" , (int32_t) freq);
-    debputs(0, "after osc");
+    getfreq();  // only here to stop seeking, if it does..
+    _delay_ms(100);
+    setfreq(freq);
+    _delay_ms(100);
+    freq = getfreq();
+    createOSCMessage("/radio/frequency", "i" , (int32_t) freq);
+    debputs(DEBUG, "after osc");
 }
 
 
@@ -301,16 +297,16 @@ ISR (TIMER0_COMPA_vect) {
 
     if (position == endpos) {
     
-        debputs(0,"thesame");
+        debputs(DEBUG,"thesame");
 
         TIMSK0 &= ~(1<<OCIE0A);
         PORTB &= ~(1 << PB5);
         direction = 0; 
         //getfreq();
         //_delay_ms(100);
-        //setandsendfreq(position2freq(position));
+        setandsendfreq(position2freq(position));
         presc = 0;
-        //encode_init();
+        encode_init();
     }
 
  else {
@@ -327,10 +323,10 @@ ISR (TIMER0_COMPA_vect) {
         if (presc == 255) {
             presc = 0;
             if (direction == +1) {
-                //seekup();
+                seekup();
                 //uart_puts("seek up\n");
             } else {
-                //seekdown();
+                seekdown();
                 //uart_puts("seek down\n");
             }
         }
@@ -357,6 +353,8 @@ int main(void)
     sei();
 
     uart_puts("radiosands controller V0.3\n");
+    debputs(DEBUG, ">>> DEBUG MODE ON <<<");
+    debputs(DEBUG, ">>> /debug/off to turn it off");
 
     _delay_ms(300);
     powerup();    
@@ -401,16 +399,41 @@ int main(void)
 	} else {
 		received = (uint8_t) c & 0xff;
 
-                uart_putc(received);
-                uart_putc('\n');
+                //uart_putc(received);
+                //uart_putc('\n');
 
                 result = parsechar(received);
 
                 if (result != 0) {
-                    debprintf(0, "command %i received", result);
+                    debprintf(DEBUG, "command %i received", result);
+                    //_delay_ms(100);
                 }
 
-                if (result == (2 | 0b01000000)) {
+                if (result == 5) { 
+                    DEBUG = true;
+                    debputs(DEBUG, ">>> DEBUG MODE ON <<<");
+                    //createOSCMessage("/debug/on", "");
+                } else if (result == 6) {
+                    debputs(DEBUG, ">>> DEBUG MODE OFF <<<");
+                    DEBUG = false;
+                    //createOSCMessage("/debug/off", "");
+                } else if (result == 7 ) {
+                    //power up
+                    powerup();
+                    //_delay_ms(100);
+                    setandsendfreq(position2freq(position));
+                } else if (result == 8) {
+                    //power down
+                    powerdown();
+                } else if (result == 9) {
+                    //seek up
+                    getfreq(); //stop running seek..
+                    seekup();
+                } else if (result == 10) {
+                    //seek down
+                    getfreq(); //stop running seek..
+                    seekdown();
+                } else if (result == (2 | 0b01000000)) {
                     stop_encoder();
                     char * dot;
 
@@ -426,7 +449,8 @@ int main(void)
                     uart_putc('\n');
                     //setfreq(freq);
                 } else if (result == 2) {
-                    uart_puts("here\n");
+                    debputs(DEBUG, "here");
+                    _delay_ms(100);
                     //stop_encoder();
                     freq = (uint16_t) (buf[26] << 8);
                     freq += buf[27];
@@ -444,7 +468,6 @@ int main(void)
                     char * space2;
                     uint8_t byte1 = 0, byte2 =0, byte3 =0;
 
-
                     byte1 = atoi(&buf[5]);
                     space1 = strchr(&buf[6], ' ');
                     byte2 = atoi(space1);
@@ -455,20 +478,11 @@ int main(void)
                     midi_putc (byte2);
                     midi_putc (byte3);
 
-                    debprintf(0, "Forwarding MIDI Message to axoloti: (%i, %i, %i)", byte1, byte2, byte3);
-    
-                    uart_putc('\n');
-                    
+                    debprintf(DEBUG, "Forwarding MIDI Message to axoloti: (%i, %i, %i)", byte1, byte2, byte3);
                 } else if (result == 3) {
                     midi_putc(buf[19]);
                     midi_putc(buf[19+4]);
                     midi_putc(buf[19+8]); 
-                    /*
-                    uart_puts("MIDI");
-                    uart_putc(buf[19]);
-                    uart_putc(buf[19+4]);
-                    uart_putc(buf[19+8]);
-                    */
                 } else if (result == (4 | 0b01000000)) {
                     freq = getfreq();
                     uart_puts("/radio/frequency ");
@@ -479,23 +493,8 @@ int main(void)
                 } else if (result == 4) {
                     freq = getfreq();
                     createOSCMessage("/radio/frequency","i", (int32_t) freq);
-                    //memcpy (buf, "/radio/frequency\0\0\0\0,i\0\0\0\0\0\0\n",29); 
-                    //buf[26] = (uint8_t) (freq >> 8);
-                    //buf[27] = (uint8_t) (freq & 0xff);
-                    //for (i = 0; i< 29; i++) uart_putc(buf[i]); 
                 }
-                    /* 
-                    uart_puts("freq\n");
-                    uart_putc( (uint8_t) (freq >> 8));
-                    uart_putc( (uint8_t) (freq & 0xff));
-                    uart_puts("ECHO\n");
-                    uart_putc(result);
-                    for (j = 0; j < i; j++) {
-                        uart_putc(buf[j]);
-                    }
-                    uart_puts("DONE\n");
-                    */
-	}
+       	}
 
    }
 

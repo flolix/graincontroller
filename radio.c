@@ -12,6 +12,7 @@
 
 #include <stdbool.h>
 #include <stdarg.h>
+#include <stdio.h>
 
 #define UART_BAUD_RATE 38400  // Baudrate
 
@@ -67,8 +68,10 @@ int8_t encode_read(void)         // read single step encoders
 }
 
 void stop_encoder(void) {
-    enc_delta = 0;
+    cli();
     TIMSK2 &= ~(1<<OCIE2A);
+    sei();
+    enc_delta = 0;
 }
 
 
@@ -150,9 +153,11 @@ uint8_t parsechar(char c) {
         if ((i & 0b11) == 0) {
             //params[p] =  buf[i -4];
             p++;
-            if (buf[paramliststart +p ] != '\0') osc_state =rec_param;
+            if (buf[paramliststart +p ] != '\0') osc_state = rec_param;
             else {
-                uart_puts("sc_done\n");
+                debputs(0, "sc_done\n");
+    // XXX WTF ! OHNE DEM GEHTS NICHT!
+                _delay_ms(100);
                 done = command;
                 osc_state = buf_empty;
             }
@@ -184,11 +189,27 @@ volatile int8_t direction;
 volatile int32_t position = 0;
 volatile int32_t endpos = 0;
 
+void debputs(uint8_t debug, char * s) {
+    uart_puts(s);
+    uart_putc('\n');
+}
+
+void debprintf(uint8_t debug, char * fs, ...) {
+    char buffer[256];
+    va_list argumente;
+    va_start(argumente, fs);
+    vsnprintf( (char *) &buffer, 256, fs, argumente);
+    va_end(argumente);
+    uart_puts(buffer);
+    uart_putc('\n');
+}
+
 
 void turn(uint16_t freq) {
     char buffer[10];
 
-    uart_puts("heretoo\n");
+    debputs(0, "in turn");
+
     cli();
     endpos = freq2position(freq);
     stop_encoder();
@@ -196,24 +217,16 @@ void turn(uint16_t freq) {
     if (direction == -1) uart_puts("-1 \n");
     sei();
 
-    uart_puts("endpos");
-
-    utoa(endpos, buffer,  10);
-    uart_puts(buffer);
-    
-    uart_puts("position");
-
-    utoa(position, buffer, 10);
-    uart_puts(buffer);
-
-    uart_putc('\n');
+    debprintf(0, "endpos %i, position %i", endpos, position);
 
     PORTB |= (1<< PD5);
+    cli();
     TIMSK0 |= 1<<OCIE0A;
+    sei();
 }
 
 uint8_t anzahlnulls (uint8_t i) {
-    return  4 - (i & 0b11);
+    return  4 - (uint8_t) (i & 0b11);
 }
 
 
@@ -276,7 +289,7 @@ void setandsendfreq(uint16_t freq) {
     //_delay_ms(100);
     //freq = getfreq();
     //createOSCMessage("/radio/frequency", "i" , (int32_t) freq);
-    uart_puts("after osc\n");
+    debputs(0, "after osc");
 }
 
 
@@ -288,7 +301,7 @@ ISR (TIMER0_COMPA_vect) {
 
     if (position == endpos) {
     
-uart_puts("thesame\n");
+        debputs(0,"thesame");
 
         TIMSK0 &= ~(1<<OCIE0A);
         PORTB &= ~(1 << PB5);
@@ -336,16 +349,16 @@ int main(void)
 
     int16_t enc;
     uint8_t result;
-    //cli();
     init_stepper();
 
+    cli();
     uart_init (UART_BAUD_SELECT(UART_BAUD_RATE, F_CPU) );
+    i2c_init();                             // initialize I2C library
+    sei();
 
-    //sei();
     uart_puts("radiosands controller V0.3\n");
 
     _delay_ms(300);
-    i2c_init();                             // initialize I2C library
     powerup();    
     _delay_ms(800);
     setfreq(8880);
@@ -357,20 +370,24 @@ int main(void)
 	
     uint8_t j;
 
-    //encode_init();
+    encode_init();
 
+    cli();
     suart_init();
-
     sei();
 
     for (;;) {
         enc = encode_read();
 
 	if (enc != 0) {
+
+                cli();
                 position += 10 * enc;
 		//freq += 10 * enc;
-		enc = 0;
                 freq = position2freq(position);
+                sei();
+
+		enc = 0;
 		setfreq(freq);
                 uart_puts("/radio/frequency ");
 		utoa(freq, buffer, 10);
@@ -388,13 +405,9 @@ int main(void)
                 uart_putc('\n');
 
                 result = parsechar(received);
-                //result == 0;
 
                 if (result != 0) {
-                    uart_puts("command ");
-                    utoa(result, buffer, 10);
-                    uart_puts(buffer);
-                    uart_puts(" received\n");
+                    debprintf(0, "command %i received", result);
                 }
 
                 if (result == (2 | 0b01000000)) {
@@ -429,24 +442,21 @@ int main(void)
                 } else if (result == (3 | 0b01000000)) {
                     char * space1;
                     char * space2;
-                    uint8_t byte = 0;
-                    uart_puts("Sending MIDI Message: ");
-                    byte = atoi(&buf[5]);
-                    utoa(byte, buffer, 10);
-                    uart_puts(buffer);
-                    uart_putc(',');
-                    midi_putc (byte);
+                    uint8_t byte1 = 0, byte2 =0, byte3 =0;
+
+
+                    byte1 = atoi(&buf[5]);
                     space1 = strchr(&buf[6], ' ');
-                    byte = atoi(space1);
-                    utoa(byte, buffer, 10);
-                    uart_puts(buffer);
-                    uart_putc(','); 
-                    midi_putc (byte);
+                    byte2 = atoi(space1);
                     space2 = strchr(space1+1,' ');
-                    byte = atoi(space2);
-                    utoa(byte, buffer, 10);
-                    uart_puts(buffer);
-                    midi_putc (byte);
+                    byte3 = atoi(space2);
+
+                    midi_putc (byte1);
+                    midi_putc (byte2);
+                    midi_putc (byte3);
+
+                    debprintf(0, "Forwarding MIDI Message to axoloti: (%i, %i, %i)", byte1, byte2, byte3);
+    
                     uart_putc('\n');
                     
                 } else if (result == 3) {

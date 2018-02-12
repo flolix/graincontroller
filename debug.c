@@ -1,3 +1,12 @@
+/*
+* provides a debug interface via uart
+*
+* project: radiosands
+* target: AtMega328
+*
+* coded by guistlerei
+*/
+
 #include <stdint.h>
 #include "uart.h"
 #include <stdio.h>

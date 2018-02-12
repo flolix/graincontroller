@@ -1,3 +1,12 @@
+/*
+* Main file..
+*
+* project: radiosands
+* target: AtMega328
+*
+* coded by guistlerei
+*/
+
 #include "si4735.h"
   // using hardware twi 
 #include "i2cmaster.h"

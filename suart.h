@@ -1,3 +1,13 @@
+/*
+* include file for suart.c 
+* its a software uart transmitter. code is mostly "borrowed" by Peter Danneger
+*
+* project: radiosands
+* target: AtMega328
+*
+* coded by guistlerei
+*/
+
 #ifndef _suart_h_
 #define _suart_h_
 

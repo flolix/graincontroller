@@ -1,3 +1,12 @@
+/*
+* for controlling a si4735 vi HW TWI
+*
+* project: radiosands
+* target: AtMega328
+*
+* coded by guistlerei
+*/
+
 #include <stdint.h>
 #include <i2cmaster.h>
 

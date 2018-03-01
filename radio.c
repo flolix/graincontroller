@@ -6,7 +6,7 @@
 *
 * coded by guistlerei
 */
-
+#include "light_ws2812.h"
 #include "si4735.h"
   // using hardware twi 
 #include "i2cmaster.h"
@@ -58,7 +58,7 @@ ISR( TIMER2_COMPA_vect )            // 1ms for manual movement
   diff = last - new;               // difference last - new
   if( diff & 1 ) {                 // bit 0 = value (1)
     last = new;                    // store new as next last
-    enc_delta += (diff & 2) - 1;   // bit 1 = direction (+/-)
+    enc_delta -= (diff & 2) - 1;   // bit 1 = direction (+/-)
   }
 }
 
@@ -116,7 +116,9 @@ uint8_t get_command(char * buf) {
             command = 9;
         } else if (memcmp(buf, "/radio/seek/down", 16) == 0) {
             command = 10;
-        }   
+        }  else if (memcmp(buf, "/leds", 5) == 0) {
+            command = 20; 
+        }
 
     return command;
 } 
@@ -202,13 +204,13 @@ void init_stepper(void) {
     PORTB &= ~(1<<PB5);
     TCCR0A |= (1<<WGM01);
     TCCR0B |= (1<<CS02);
-    OCR0A = 200;
+    OCR0A = 255;
 }
 
 volatile int8_t direction;
 
-volatile int32_t position = 0;
-volatile int32_t endpos = 0;
+volatile int16_t position = 0;
+volatile int16_t endpos = 0;
 
 void turn(uint16_t freq) {
     char buffer[10];
@@ -219,9 +221,9 @@ void turn(uint16_t freq) {
     endpos = freq2position(freq);
     stop_encoder();
     if (endpos < position) direction = -1; else direction = 1;
-    if (direction == -1) uart_puts("-1 \n");
+    //if (direction == -1) uart_puts("-1 \n");
     sei();
-
+    debprintf(DEBUG, "direction %i", direction);
     debprintf(DEBUG, "endpos %i, position %i", endpos, position);
     //_delay_ms(100);
 
@@ -344,8 +346,27 @@ ISR (TIMER0_COMPA_vect) {
 }
 
 
+struct cRGB led[1];
+
 int main(void)
 {
+    uint8_t j;
+
+    led[0].r = 20;
+    led[0].g = 20;
+    led[0].b = 20;
+    ws2812_setleds_rgb(led, 18);
+
+/*
+    const uint8_t rvalue = 0x07;
+    const uint8_t gvalue = 0x08;
+    const uint8_t bvalue = 0x05;
+    memset(&led, 0, 20*3);
+    for (j = 0; j<18; j++) {
+        led[j].r = rvalue; led[j].g = gvalue; led[j].b = bvalue;
+    }   
+*/
+ 
     unsigned int c;
     char buffer[256];
     uint8_t received;
@@ -369,13 +390,10 @@ int main(void)
     powerup();    
     _delay_ms(800);
     setfreq(8880);
-    //seekup();
     _delay_ms(500);
     freq = getfreq();
     position = freq2position(freq);
     endpos = position;
-	
-    uint8_t j;
 
     encode_init();
 
@@ -383,7 +401,11 @@ int main(void)
     suart_init();
     sei();
 
+    //ws2812_setleds(led,20);    
+
     for (;;) {
+
+
         enc = encode_read();
 
 	if (enc != 0) {
@@ -418,7 +440,12 @@ int main(void)
                     //_delay_ms(100);
                 }
 
-                if (result == 5) { 
+                if (result == 20) {
+                    led[0].r = (buf[19]);
+                    led[0].g = (buf[19+4]);
+                    led[0].b = (buf[19+8]); 
+                    ws2812_setleds_rgb(led, 18);
+                } else if (result == 5) { 
                     DEBUG = true;
                     debputs(DEBUG, ">>> DEBUG MODE ON <<<");
                     //createOSCMessage("/debug/on", "");

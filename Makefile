@@ -79,7 +79,7 @@ OBJDIR = obj
 
 
 # List C source files here. (C dependencies are automatically generated.)
-SRC = $(TARGET).c twimaster.c uart.c suart.c si4735.c debug.c
+SRC = $(TARGET).c twimaster.c uart.c suart.c si4735.c debug.c light_ws2812.c
 
 
 # List C++ source files here. (C dependencies are automatically generated.)

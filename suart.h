@@ -1,5 +1,5 @@
 /*
-* include file for suart.c 
+* include file for suart.c
 * its a software uart transmitter. code is mostly "borrowed" by Peter Danneger
 *
 * project: radiosands

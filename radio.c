@@ -29,6 +29,9 @@
 #define PHASE_A     (PIND & 1<<PD3)
 #define PHASE_B     (PIND & 1<<PD4)
 
+//uint8_t DEBUG = true;
+uint8_t DEBUG = false;
+
 volatile int8_t enc_delta;          // -128 ... 127
 static int8_t last;
 
@@ -70,10 +73,11 @@ int8_t encode_read(void)         // read single step encoders
 
   cli();
   val = enc_delta;
-  if (val < 10 && val > -10) val = 0; else enc_delta = 0;
- 
+  //if (val < 10 && val > -10) val = 0; else enc_delta = 0;
+    enc_delta = 0; 
   sei();
-  return val / 10;                   // counts since last call
+  //return val / 10;                   // counts since last call
+    return val;
 }
 
 void stop_encoder(void) {
@@ -85,11 +89,11 @@ void stop_encoder(void) {
 
 
 uint16_t position2freq(int32_t pos) {
-    return (pos / 1) + 8880;
+    return (pos / 0.75) + 8590;
 }
 
 int32_t freq2position(uint16_t fre) {
-    return (fre - 8880) * 1;
+    return (fre - 8590) * 0.75;
 }
 
 
@@ -178,9 +182,6 @@ uint8_t parsechar(char c) {
             p++;
             if (buf[paramliststart +p ] != '\0') osc_state = rec_param;
             else {
-                debputs(DEBUG, "sc_done");
-    // XXX WTF ! OHNE DEM GEHTS NICHT!
-                //_delay_ms(100);
                 done = command;
                 osc_state = buf_empty;
             }
@@ -200,11 +201,16 @@ void midi_putc(char c) {
 
 void init_stepper(void) {
     DDRC |= 0b1111;
-    DDRB |= (1<<PB5);
+    DDRB |= (1<<PB5) | (1 << PB4);
     PORTB &= ~(1<<PB5);
+    PORTB &= ~(1<<PB4);
     TCCR0A |= (1<<WGM01);
+    //prescaler 256
     TCCR0B |= (1<<CS02);
-    OCR0A = 255;
+
+    TCCR0B |= (1<<CS00);    //damit prescaler 1024
+    //OCR0A = 255; // bisher
+    OCR0A = 90; //speedtest;
 }
 
 volatile int8_t direction;
@@ -212,9 +218,18 @@ volatile int8_t direction;
 volatile int16_t position = 0;
 volatile int16_t endpos = 0;
 
-void turn(uint16_t freq) {
-    char buffer[10];
+void stepenable(uint8_t en) {
+    uint8_t portb = PORTB & 0b11001111; 
+    PORTB = portb | (en << 4);
+}
 
+enum {STOPPED, RAMP_UP, RAMP_DOWN, RUNNING};
+volatile uint8_t stepper_state = STOPPED;
+volatile uint8_t speed = 0;
+
+void turn(uint16_t freq) {
+    stepper_state = RAMP_UP;
+    speed = 0;
     debputs(DEBUG, "in turn");
     //_delay_ms(100);
     cli();
@@ -223,15 +238,17 @@ void turn(uint16_t freq) {
     if (endpos < position) direction = -1; else direction = 1;
     //if (direction == -1) uart_puts("-1 \n");
     sei();
-    debprintf(DEBUG, "direction %i", direction);
-    debprintf(DEBUG, "endpos %i, position %i", endpos, position);
+    //debprintf(DEBUG, "direction %i", direction);
+    //debprintf(DEBUG, "endpos %i, position %i", endpos, position);
     //_delay_ms(100);
-
-    PORTB |= (1<< PD5);
+    //PORTB |= (1<< PD5);
     cli();
+    stepenable(0b11);
     TIMSK0 |= 1<<OCIE0A;
     sei();
 }
+
+
 
 uint8_t anzahlnulls (uint8_t i) {
     return  4 - (uint8_t) (i & 0b11);
@@ -239,7 +256,6 @@ uint8_t anzahlnulls (uint8_t i) {
 
 
 void createOSCMessage(char * command, char * paramlist, ...) {
-    char buffer[10];
     va_list argumente;
     uint8_t anzahl, commandlength, i, an;
     int32_t intarg;
@@ -298,75 +314,117 @@ void setandsendfreq(uint16_t freq) {
     createOSCMessage("/radio/frequency", "i" , (int32_t) freq);
     debputs(DEBUG, "after osc");
 }
+//                     1     0        3        2
+//                    AaBb
+//uint8_t steps[4] = {0b1010, 0b1001, 0b0101, 0b0110};
+//                    2       1       0        3
+uint8_t steps[4] = { 0b0110,0b1010,0b1001,  0b0101};
+//uint8_t steps[8] = {0b1001, 0b1000, 0b1010, 0b0010, 0b0110,0b0100, 0b0101, 0b0001};
+//uint8_t steps_enable[8] = {0b11, 0b10, 0b11, 0b01, 0b11, 0b10, 0b11, 0b01};
+uint8_t steps_enable[8] = {0b11, 0b01, 0b11, 0b10, 0b11, 0b01, 0b11, 0b10};
+
+//543210
+//000011
+//110000
 
 
-uint8_t steps[4] = {0b1010, 0b1001, 0b0101, 0b0110};
+volatile uint8_t RADIO_THERE = 0;
+
+void stepper_stop(void) {
+    TIMSK0 &= ~(1<<OCIE0A);
+    direction =0 ;
+    speed = 0;
+    _delay_ms(10);
+    if (RADIO_THERE) setandsendfreq(position2freq(position));
+    stepenable(0);
+    encode_init();
+}
+
+uint16_t runden(uint16_t v) {
+    uint8_t v8 =  v % 10;
+    if (v8 <=5 ) return v - v8;
+    else return v+ (10-v8);    
+}
+
+
+
+//uint8_t speedtable [4] = {255, 110, 90};
+uint8_t speedtable [4] = {200, 90,25};
 
 ISR (TIMER0_COMPA_vect) {
     static uint8_t presc = 0;
     static uint8_t step = 0;
+    static uint8_t speed_presc = 0;
+
+    speed_presc++;
+    if (speed_presc == 5) speed_presc = 0;
+
+    if (stepper_state == RAMP_UP) {
+        if (speed_presc == 0) {
+            OCR0A = speedtable[speed];
+            speed++;
+            if (speed >= 3) stepper_state = RUNNING;
+        }
+    } else if (stepper_state == RAMP_DOWN) {
+        stepper_stop();
+        stepper_state = STOPPED;
+        return;
+    }
 
     if (position == endpos) {
-    
-        debputs(DEBUG,"thesame");
-
-        TIMSK0 &= ~(1<<OCIE0A);
-        PORTB &= ~(1 << PB5);
-        direction = 0; 
+        debprintf(DEBUG,"reached %i", position);
+        stepper_state = RAMP_DOWN;
+        OCR0A = 255;
+        //stepper_stop();
+        //TIMSK0 &= ~(1<<OCIE0A);
+        //PORTB &= ~(1 << PB5);
+        //stepenable(0);
+        //direction = 0; 
         //getfreq();
         //_delay_ms(100);
-        setandsendfreq(position2freq(position));
         presc = 0;
-        encode_init();
-    }
+        return;
+    } 
 
- else {
-
-        PORTC = steps[step];
-        step += direction;
-        if (step == 255) step = 3;
-        if (step > 3) step = 0;
-        position += direction;
+    //OCR0A = 255; // bisher
+    //else if (steeper_state == RAMP_DOWN) {
+    //    speed--;
+    //    if (speed == 0) stepper_state =STOPPED;
+    //} 
+    
+    PORTC = steps[step];
+    //stepenable(steps_enable[step]);
+    step += direction;
+    if (step == 255) step = 3;
+    if (step > 3) step = 0;
+    //if (step > 7) step = 0;
+    position += direction;
 
     //teiler
+    if (!RADIO_THERE) return;
 
-        presc++;
-        if (presc == 255) {
-            presc = 0;
-            if (direction == +1) {
-                seekup();
-                //uart_puts("seek up\n");
-            } else {
-                seekdown();
-                //uart_puts("seek down\n");
-            }
+    presc++;
+    if (presc == 200) {
+        setfreq(runden(position2freq(position)));
+        presc = 0;
+    /*
+        if (direction == +1) {
+            seekup();
+            //uart_puts("seek up\n");
+        } else {
+            seekdown();
+            //uart_puts("seek down\n");
         }
+    */
     }
-
 }
 
 
-struct cRGB led[1];
-
-int main(void)
-{
+int main(void) {
     uint8_t j;
+    ws2812_setleds_rgb(0,0,0,18);
+    ws2812_setleds_rgb(20, 20, 20, 1);
 
-    led[0].r = 20;
-    led[0].g = 20;
-    led[0].b = 20;
-    ws2812_setleds_rgb(led, 18);
-
-/*
-    const uint8_t rvalue = 0x07;
-    const uint8_t gvalue = 0x08;
-    const uint8_t bvalue = 0x05;
-    memset(&led, 0, 20*3);
-    for (j = 0; j<18; j++) {
-        led[j].r = rvalue; led[j].g = gvalue; led[j].b = bvalue;
-    }   
-*/
- 
     unsigned int c;
     char buffer[256];
     uint8_t received;
@@ -376,10 +434,20 @@ int main(void)
     int16_t enc;
     uint8_t result;
     init_stepper();
+    //stepper_move_left();
+    position = freq2position(10800);
+    turn(0); //will never reach..
+    _delay_ms(3000);
+    stepper_stop(); 
+    _delay_ms(100);
+    position = freq2position(8590); //ganze linke home position
+    turn(8750);
+    ws2812_setleds_rgb(20, 20, 20, 5);
 
     cli();
     uart_init (UART_BAUD_SELECT(UART_BAUD_RATE, F_CPU) );
     i2c_init();                             // initialize I2C library
+    PORTC |= (1<< PC4) | (1 << PC5);        // using the internal pull ups!
     sei();
 
     uart_puts("radiosands controller V0.3\n");
@@ -387,13 +455,22 @@ int main(void)
     debputs(DEBUG, ">>> /debug/off to turn it off");
 
     _delay_ms(300);
-    powerup();    
-    _delay_ms(800);
-    setfreq(8880);
-    _delay_ms(500);
-    freq = getfreq();
-    position = freq2position(freq);
-    endpos = position;
+    ws2812_setleds_rgb(20, 20, 20, 8);
+    uint8_t erg = powerup();
+    debprintf(DEBUG, "powerup return %i", erg);
+    if (erg == 1) {    
+        RADIO_THERE = 1;
+        _delay_ms(800);
+        //setfreq(8880);
+        //freq = getfreq();
+        //endpos = freq2position(freq);
+        turn(8880);
+        freq = 8880;
+    } else {
+        debputs(DEBUG, "ERROR: Could not connect to radio chip.");
+        ws2812_setleds_rgb(50, 0, 0, 9);
+        for (;;);
+    }
 
     encode_init();
 
@@ -401,37 +478,36 @@ int main(void)
     suart_init();
     sei();
 
-    //ws2812_setleds(led,20);    
-
+    ws2812_setleds_rgb(20, 20, 20, 18);
     for (;;) {
-
 
         enc = encode_read();
 
 	if (enc != 0) {
 
                 cli();
-                position += 10 * enc;
+                //position += 10 * enc;
+                position += enc;
 		//freq += 10 * enc;
-                freq = position2freq(position);
-                sei();
+                int8_t diff = runden(position2freq(position)) - freq;
+                if (abs(diff) != 0) {
+                    freq += diff;
+                    sei();
 
-		enc = 0;
-		setfreq(freq);
-                uart_puts("/radio/frequency ");
-		utoa(freq, buffer, 10);
-		uart_puts(buffer);
-                uart_puts(" MHz");
-		uart_putc('\n');
+                    enc = 0;
+                    setfreq(freq);
+                    uart_puts("/radio/frequency ");
+                    utoa(freq, buffer, 10);
+                    uart_puts(buffer);
+                    uart_puts(" MHz");
+                    uart_putc('\n');
+                }
 	}
 	
 	c = uart_getc();
 	if (c & UART_NO_DATA) {
 	} else {
 		received = (uint8_t) c & 0xff;
-
-                //uart_putc(received);
-                //uart_putc('\n');
 
                 result = parsechar(received);
 
@@ -441,15 +517,24 @@ int main(void)
                 }
 
                 if (result == 20) {
-                    led[0].r = (buf[19]);
-                    led[0].g = (buf[19+4]);
-                    led[0].b = (buf[19+8]); 
-                    ws2812_setleds_rgb(led, 18);
-                } else if (result == 5) { 
+                    ws2812_setleds_rgb(buf[19], buf[19+4], buf[19+8], 18);
+                } else if (result == (20 | 0b01000000)) {
+                    char * space1;
+                    char * space2;
+                    uint8_t byte1 = 0, byte2 =0, byte3 =0;
+
+                    byte1 = atoi(&buf[5]);
+                    space1 = strchr(&buf[6], ' ');
+                    byte2 = atoi(space1);
+                    space2 = strchr(space1+1,' ');
+                    byte3 = atoi(space2);
+                    ws2812_setleds_rgb(byte1, byte2,byte3, 18);
+                    debprintf(DEBUG, "Setting LEDS to : %i, %i, %i", byte1, byte2, byte3);
+                } else if ((result & 5)== 5 ) { 
                     DEBUG = true;
                     debputs(DEBUG, ">>> DEBUG MODE ON <<<");
                     //createOSCMessage("/debug/on", "");
-                } else if (result == 6) {
+                } else if ((result & 6) == 6) {
                     debputs(DEBUG, ">>> DEBUG MODE OFF <<<");
                     DEBUG = false;
                     //createOSCMessage("/debug/off", "");
@@ -461,33 +546,37 @@ int main(void)
                 } else if (result == 8) {
                     //power down
                     powerdown();
-                } else if (result == 9) {
+                } else if ((result & 9) == 9) {
                     //seek up
                     getfreq(); //stop running seek..
                     seekup();
-                } else if (result == 10) {
+                } else if ((result & 10) == 10) {
                     //seek down
                     getfreq(); //stop running seek..
                     seekdown();
                 } else if (result == (2 | 0b01000000)) {
-                    stop_encoder();
-                    char * dot;
-
-                    freq = atoi(&buf[16]) * 100; 
-                    dot = strchr(&buf[17], '.');
-                    freq += atoi(dot+1);
-
+                    //stop_encoder();
+                    //char * dot;
+                    //freq = atoi(&buf[16]) * 100; 
+                    //dot = strchr(&buf[17], '.');
+                    //freq += atoi(dot+1);
+                    if (stepper_state != STOPPED) {
+                        stepper_state = RAMP_DOWN;
+                        _delay_ms(100);
+                    }
+                    freq = atoi(&buf[16]); 
                     turn( freq);
-
                     utoa(freq, buffer,10);
                     uart_puts("set frequency");
                     uart_puts(buffer);
                     uart_putc('\n');
                     //setfreq(freq);
                 } else if (result == 2) {
-                    debputs(DEBUG, "here");
-                    _delay_ms(100);
                     //stop_encoder();
+                    if (stepper_state != STOPPED) {
+                        stepper_state = RAMP_DOWN;
+                        _delay_ms(100);
+                    } 
                     freq = (uint16_t) (buf[26] << 8);
                     freq += buf[27];
                     turn(freq);
@@ -531,9 +620,5 @@ int main(void)
                     createOSCMessage("/radio/frequency","i", (int32_t) freq);
                 }
        	}
-
    }
-
-
-
 }

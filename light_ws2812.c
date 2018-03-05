@@ -21,14 +21,14 @@ void inline ws2812_setleds(struct cRGB *ledarray, uint16_t leds)
    ws2812_setleds_pin(ledarray,leds, _BV(ws2812_pin));
 }
 
-void inline ws2812_setleds_rgb(struct cRGB *ledarray, uint16_t leds)
+void inline ws2812_setleds_rgb(uint8_t r, uint8_t g, uint8_t b, uint16_t leds)
 {
-   ws2812_setleds_pin_rgb(ledarray,leds, _BV(ws2812_pin));
+   ws2812_setleds_pin_rgb(r, g, b,leds, _BV(ws2812_pin));
 }
 
-void inline ws2812_setleds_pin_rgb(struct cRGB *ledarray, uint16_t leds, uint8_t pinmask)
+void inline ws2812_setleds_pin_rgb(uint8_t r, uint8_t g, uint8_t b, uint16_t leds, uint8_t pinmask)
 {
-  ws2812_sendarray_mask_rgb((uint8_t*)ledarray,leds+leds+leds,pinmask);
+  ws2812_sendarray_mask_rgb(r,g,b,leds+leds+leds,pinmask);
   _delay_us(ws2812_resettime);
 }
 
@@ -194,10 +194,12 @@ w_nop16
 }
 
 
-void inline ws2812_sendarray_mask_rgb(uint8_t *data,uint16_t datlen,uint8_t maskhi)
-{
-  uint8_t curbyte,ctr,masklo;
-  uint8_t sreg_prev;
+void inline ws2812_sendarray_mask_rgb(uint8_t r, uint8_t g, uint8_t b, uint16_t datlen,uint8_t maskhi) {
+    struct cRGB l;
+    l.r = r; l.g = g; l.b = b;
+    uint8_t *data = (uint8_t *) &l; 
+    uint8_t curbyte, ctr, masklo;
+    uint8_t sreg_prev;
   
   ws2812_DDRREG |= maskhi; // Enable output
   
@@ -211,6 +213,7 @@ void inline ws2812_sendarray_mask_rgb(uint8_t *data,uint16_t datlen,uint8_t mask
     if (i == 3) { i = 0;}
 
     curbyte = * (data + i);
+    //curbyte = ((uint8_t *) &l) + i
     //curbyte=*data++;
     
     

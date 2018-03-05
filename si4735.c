@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 #include <i2cmaster.h>
+#include <util/delay.h>
+#include <debug.h>
 
 #define DevSi4735  0x22      // device address of SI4735, see datasheet
 
@@ -40,13 +42,22 @@ void seekdown(void) {
 }
 
 
-void powerup(void) {
-    i2c_start_wait(DevSi4735+I2C_WRITE); 
+uint8_t powerup(void) {
+    uint8_t erg = i2c_start(DevSi4735+I2C_WRITE);
+    uint8_t tries = 5;
+    while (erg == 1 && tries != 0) {
+        tries--;
+        _delay_ms(100);
+        erg = i2c_start(DevSi4735+I2C_WRITE);
+    }
+    if (tries == 0 && erg == 1) return 0;
+    //i2c_start_wait(DevSi4735+I2C_WRITE); 
 
     i2c_write(0x01);                    
     i2c_write(0x10);   
     i2c_write(0x05);                   
     i2c_stop();
+    return 1;
 }
 
 void powerdown(void) {

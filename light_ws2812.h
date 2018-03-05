@@ -25,7 +25,7 @@
 
 
 #define ws2812_port B     // Data port 
-#define ws2812_pin 4 // Data out pin
+#define ws2812_pin 3 // Data out pin
 
 /*
  *  Structure of the LED array
@@ -57,8 +57,8 @@ void ws2812_setleds_pin (struct cRGB  *ledarray, uint16_t number_of_leds,uint8_t
 void ws2812_setleds_rgbw(struct cRGBW *ledarray, uint16_t number_of_leds);
 
 //XXX
-void ws2812_setleds_rgb     (struct cRGB  *ledarray, uint16_t number_of_leds);
-void ws2812_setleds_pin_rgb (struct cRGB  *ledarray, uint16_t number_of_leds,uint8_t pinmask);
+void ws2812_setleds_rgb     (uint8_t r, uint8_t g, uint8_t b, uint16_t number_of_leds);
+void ws2812_setleds_pin_rgb (uint8_t r, uint8_t g, uint8_t b, uint16_t number_of_leds,uint8_t pinmask);
 
 /* 
  * Old interface / Internal functions
@@ -71,7 +71,7 @@ void ws2812_sendarray     (uint8_t *array,uint16_t length);
 void ws2812_sendarray_mask(uint8_t *array,uint16_t length, uint8_t pinmask);
 
 //XXX
-void ws2812_sendarray_mask_rgb(uint8_t *array,uint16_t length, uint8_t pinmask);
+void ws2812_sendarray_mask_rgb(uint8_t r, uint8_t g, uint8_t b, uint16_t length, uint8_t pinmask);
 
 /*
  * Internal defines

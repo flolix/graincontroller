@@ -51,7 +51,7 @@ void encode_init( void )
   TIMSK2 |= 1<<OCIE2A;
 }
 
-ISR( TIMER2_COMPA_vect )            // 1ms for manual movement
+ISR( TIMER2_COMPA_vect )         
 {
   int8_t new, diff;
 
@@ -89,7 +89,7 @@ void stop_encoder(void) {
 
 
 uint16_t position2freq(int32_t pos) {
-    return (pos / 0.75) + 8590;
+    return (pos + (0.75 * 8590)) / 0.75;
 }
 
 int32_t freq2position(uint16_t fre) {
@@ -334,16 +334,16 @@ void stepper_stop(void) {
     TIMSK0 &= ~(1<<OCIE0A);
     direction =0 ;
     speed = 0;
-    _delay_ms(10);
+    //_delay_ms(10);
     if (RADIO_THERE) setandsendfreq(position2freq(position));
     stepenable(0);
     encode_init();
 }
 
 uint16_t runden(uint16_t v) {
-    uint8_t v8 =  v % 10;
-    if (v8 <=5 ) return v - v8;
-    else return v+ (10-v8);    
+    uint8_t v8 =  (uint8_t) (v % 10);
+    if (v8 < 5 ) return v - v8;
+    else return v + (10-v8);    
 }
 
 
@@ -485,16 +485,15 @@ int main(void) {
 
 	if (enc != 0) {
 
-                cli();
+                //cli();
                 //position += 10 * enc;
                 position += enc;
+                enc = 0;
 		//freq += 10 * enc;
                 int8_t diff = runden(position2freq(position)) - freq;
-                if (abs(diff) != 0) {
+                if (diff != 0) {
                     freq += diff;
-                    sei();
 
-                    enc = 0;
                     setfreq(freq);
                     uart_puts("/radio/frequency ");
                     utoa(freq, buffer, 10);
@@ -502,6 +501,7 @@ int main(void) {
                     uart_puts(" MHz");
                     uart_putc('\n');
                 }
+                //sei();
 	}
 	
 	c = uart_getc();

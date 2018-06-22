@@ -152,7 +152,7 @@ uint8_t parsechar(char c) {
     } else if (osc_state == rec_command) {
         if ( c == 0xa ) {
             osc_state = buf_empty;
-            done = get_command(buf) | 0b01000000;
+            done = 0xff;
             // kein osc commando..
         } else if (c == '\0' && (i & 0b11) == 0) {
             //parameters?
@@ -307,9 +307,9 @@ void createOSCMessage(char * command, char * paramlist, ...) {
 
 void setandsendfreq(uint16_t freq) {
     getfreq();  // only here to stop seeking, if it does..
-    _delay_ms(100);
+    _delay_ms(50);
     setfreq(freq);
-    _delay_ms(100);
+    _delay_ms(50);
     freq = getfreq();
     createOSCMessage("/radio/frequency", "i" , (int32_t) freq);
     debputs(DEBUG, "after osc");
@@ -436,10 +436,10 @@ int main(void) {
     init_stepper();
     //stepper_move_left();
     position = freq2position(10800);
-    turn(0); //will never reach..
+    turn(8590); //will never reach..
     _delay_ms(3000);
     stepper_stop(); 
-    _delay_ms(100);
+    _delay_ms(50);
     position = freq2position(8590); //ganze linke home position
     turn(8750);
     ws2812_setleds_rgb(20, 20, 20, 5);
@@ -518,23 +518,11 @@ int main(void) {
 
                 if (result == 20) {
                     ws2812_setleds_rgb(buf[19], buf[19+4], buf[19+8], 18);
-                } else if (result == (20 | 0b01000000)) {
-                    char * space1;
-                    char * space2;
-                    uint8_t byte1 = 0, byte2 =0, byte3 =0;
-
-                    byte1 = atoi(&buf[5]);
-                    space1 = strchr(&buf[6], ' ');
-                    byte2 = atoi(space1);
-                    space2 = strchr(space1+1,' ');
-                    byte3 = atoi(space2);
-                    ws2812_setleds_rgb(byte1, byte2,byte3, 18);
-                    debprintf(DEBUG, "Setting LEDS to : %i, %i, %i", byte1, byte2, byte3);
-                } else if ((result & 5)== 5 ) { 
+                } else if (result == 5 ) { 
                     DEBUG = true;
                     debputs(DEBUG, ">>> DEBUG MODE ON <<<");
                     //createOSCMessage("/debug/on", "");
-                } else if ((result & 6) == 6) {
+                } else if (result == 6) {
                     debputs(DEBUG, ">>> DEBUG MODE OFF <<<");
                     DEBUG = false;
                     //createOSCMessage("/debug/off", "");
@@ -546,36 +534,19 @@ int main(void) {
                 } else if (result == 8) {
                     //power down
                     powerdown();
-                } else if ((result & 9) == 9) {
+                } else if (result == 9) {
                     //seek up
                     getfreq(); //stop running seek..
                     seekup();
-                } else if ((result & 10) == 10) {
+                } else if (result == 10) {
                     //seek down
                     getfreq(); //stop running seek..
                     seekdown();
-                } else if (result == (2 | 0b01000000)) {
-                    //stop_encoder();
-                    //char * dot;
-                    //freq = atoi(&buf[16]) * 100; 
-                    //dot = strchr(&buf[17], '.');
-                    //freq += atoi(dot+1);
-                    if (stepper_state != STOPPED) {
-                        stepper_state = RAMP_DOWN;
-                        _delay_ms(100);
-                    }
-                    freq = atoi(&buf[16]); 
-                    turn( freq);
-                    utoa(freq, buffer,10);
-                    uart_puts("set frequency");
-                    uart_puts(buffer);
-                    uart_putc('\n');
-                    //setfreq(freq);
-                } else if (result == 2) {
+               } else if (result == 2) {
                     //stop_encoder();
                     if (stepper_state != STOPPED) {
                         stepper_state = RAMP_DOWN;
-                        _delay_ms(100);
+                        _delay_ms(10);
                     } 
                     freq = (uint16_t) (buf[26] << 8);
                     freq += buf[27];
@@ -586,39 +557,14 @@ int main(void) {
                     //for (i = 0;i < 13; i++) uart_putc(buf[i]);
                     //uart_puts("received osc /ping\n");
                     createOSCMessage("/ping", "");
-                } else if (result == (1 | 0b01000000)) {
-                    uart_puts("/ping\n");
-                } else if (result == (3 | 0b01000000)) {
-                    char * space1;
-                    char * space2;
-                    uint8_t byte1 = 0, byte2 =0, byte3 =0;
-
-                    byte1 = atoi(&buf[5]);
-                    space1 = strchr(&buf[6], ' ');
-                    byte2 = atoi(space1);
-                    space2 = strchr(space1+1,' ');
-                    byte3 = atoi(space2);
-
-                    midi_putc (byte1);
-                    midi_putc (byte2);
-                    midi_putc (byte3);
-
-                    debprintf(DEBUG, "Forwarding MIDI Message to axoloti: (%i, %i, %i)", byte1, byte2, byte3);
-                } else if (result == 3) {
+               } else if (result == 3) {
                     midi_putc(buf[19]);
                     midi_putc(buf[19+4]);
                     midi_putc(buf[19+8]); 
-                } else if (result == (4 | 0b01000000)) {
-                    freq = getfreq();
-                    uart_puts("/radio/frequency ");
-                    utoa(freq, buffer,10);
-                    uart_puts(buffer);
-                    uart_puts(" MHz");
-                    uart_putc('\n');
-                } else if (result == 4) {
+               } else if (result == 4) {
                     freq = getfreq();
                     createOSCMessage("/radio/frequency","i", (int32_t) freq);
-                }
+               }
        	}
    }
 }

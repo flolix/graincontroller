@@ -12,6 +12,6 @@
 void setfreq(uint16_t freq) ;
 void seekup(void) ;
 void seekdown(void) ;
-uint8_t powerup(void) ;
-void powerdown(void) ;
+uint8_t si4735_powerup(void) ;
+void si4735_powerdown(void) ;
 uint16_t getfreq(void) ;

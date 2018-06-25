@@ -42,7 +42,7 @@ void seekdown(void) {
 }
 
 
-uint8_t powerup(void) {
+uint8_t si4735_powerup(void) {
     uint8_t erg = i2c_start(DevSi4735+I2C_WRITE);
     uint8_t tries = 5;
     while (erg == 1 && tries != 0) {
@@ -60,7 +60,7 @@ uint8_t powerup(void) {
     return 1;
 }
 
-void powerdown(void) {
+void si4735_powerdown(void) {
     i2c_start_wait(DevSi4735+I2C_WRITE); 
 
     i2c_write(0x11);   

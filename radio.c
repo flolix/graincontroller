@@ -14,6 +14,7 @@
 #include "debug.h"
 #include "version.h"
 #include "OSC.h"
+#include "soft_reset.h"
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -27,17 +28,7 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
-#define soft_reset()        \
-do                          \
-{                           \
-    wdt_enable(WDTO_15MS);  \
-    for(;;)                 \
-    {                       \
-    }                       \
-} while(0)
-
 #define UART_BAUD_RATE 38400  // Baudrate
-
 
 #define PHASE_A     (PIND & 1<<PD3)
 #define PHASE_B     (PIND & 1<<PD4)
@@ -73,7 +64,6 @@ uint16_t runden(uint16_t v) {
 #define scalefactor  6.0
 
 uint16_t position2freq(int32_t pos) {
-    //const factor = 0.75
     return (pos + (scalefactor * 8590)) / scalefactor;
 }
 
@@ -116,58 +106,37 @@ ISR( TIMER2_COMPA_vect )
 }
 
 
-
-int8_t encode_read(void)         // read single step encoders
-{
-  int16_t val;
-
-  cli();
-  val = enc_delta;
-  //if (val < 10 && val > -10) val = 0; else enc_delta = 0;
-    enc_delta = 0; 
-  sei();
-  //return val / 10;                   // counts since last call
-    return val;
-}
-
-void stop_encoder(void) {
-    cli();
-    TIMSK2 &= ~(1<<OCIE2A);
-    sei();
-    enc_delta = 0;
-}
-
-
+enum commands { NOCOMMAND, RADIO_FREQ, RADIO_FREQ_QUERY, PING, MIDI, DEBUGON, DEBUGOFF, RADIO_POWON, RADIO_POWOFF,RADIO_SEUP, RADIO_SEDOWN, LEDS, SHUTDOWN, REV, FAILURE }; 
 
 uint8_t get_command(char * buf) {
-    debputs(DEBUG, "in get command");
-    uint8_t command = 0xfe;
+    //debputs(DEBUG, "in get command");
+    uint8_t command = FAILURE;
         if (memcmp(buf, "/radio/frequency?", 17) == 0) {
-            command = 4;
+            command = RADIO_FREQ_QUERY;
         } else if (memcmp(buf, "/radio/frequency", 16) == 0) {
-            command = 2;
+            command = RADIO_FREQ;
         } else if (memcmp(buf, "/ping", 5) == 0) {
-            command = 1;
+            command = PING;
         } else if (memcmp(buf, "/midi", 5) == 0) {
-            command = 3;
+            command = MIDI;
         } else if (memcmp(buf, "/debug/on",9) == 0) {
-            command = 5;
+            command = DEBUGON;
         } else if (memcmp(buf, "/debug/off", 10) == 0) {
-            command = 6;
+            command = DEBUGOFF;
         } else if (memcmp(buf, "/radio/power/up", 15) == 0) {
-            command = 7;
+            command = RADIO_POWON;
         } else if (memcmp(buf, "/radio/power/down", 17) == 0) {
-            command = 8;
+            command = RADIO_POWOFF;
         } else if (memcmp(buf, "/radio/seek/up", 14) == 0) {
-            command = 9;
+            command = RADIO_SEUP;
         } else if (memcmp(buf, "/radio/seek/down", 16) == 0) {
-            command = 10;
+            command = RADIO_SEDOWN;
         }  else if (memcmp(buf, "/leds", 5) == 0) {
-            command = 20; 
+            command = LEDS; 
         }  else if (memcmp(buf, "/shutdown", 9) == 0) {
-            command = 30;
-        }  else if (memcmp(buf, "/version", 8) == 0) {
-            command = 40;
+            command = SHUTDOWN;
+        }  else if (memcmp(buf, "/revision", 9) == 0) {
+            command = REV;
         }
     return command;
 } 
@@ -175,12 +144,12 @@ uint8_t get_command(char * buf) {
 
 enum OSC_STATE {buf_empty, rec_command, is_paramlist_there, rec_paramlist, rec_param};
 
-static char buf[256];
+static char buf[60];
 static uint8_t i = 0;
 static uint8_t p;
 static uint8_t paramliststart;
 
-uint8_t parsechar(char c) {
+uint8_t parseOSCchar(char c) {
     static enum OSC_STATE osc_state = buf_empty;
     uint8_t done = 0;
     static uint8_t command;
@@ -305,16 +274,6 @@ void turn(uint16_t freq) {
 }
 
 
-
-void setandsendfreq(uint16_t freq) {
-    getfreq();  // only here to stop seeking, if it does..
-    _delay_ms(50);
-    setfreq(freq);
-    _delay_ms(50);
-    freq = getfreq();
-    OSCcreateMessage("/radio/frequency", "i" , (int32_t) freq);
-    debputs(DEBUG, "after osc");
-}
 //                     1     0        3        2
 //                    AaBb
 //uint8_t steps[4] = {0b1010, 0b1001, 0b0101, 0b0110};
@@ -535,6 +494,8 @@ int main(void) {
     uint8_t result;
 
     startup();
+    //struct cRGB * ledar = malloc(18+18+18);
+    struct cRGB ledar[18];
 
     int8_t STATION_UPDATED = 0;
     //main loop
@@ -546,10 +507,8 @@ int main(void) {
             sei();
             if (diff != 0) {
                 STATION_UPDATED = 10;
-                //freq += diff;
                 freq = runden(position2freq(position));
-                //debprintf(1, "berechnete freq : %i", freq);
-                setfreq(freq);
+                si4735_setfreq(freq);
             } else {
                 if (STATION_UPDATED >= 0) {
                     STATION_UPDATED--; 
@@ -567,61 +526,59 @@ int main(void) {
 	if (c & UART_NO_DATA) {
 	} else {
 		received = (uint8_t) c & 0xff;
-                result = parsechar(received);
+                result = parseOSCchar(received);
                 if (result != 0) {
                     debprintf(DEBUG, "command %i received", result);
-                    //_delay_ms(100);
                 }
-                if (result == 40) {
-                    OSCcreateMessage("/version", "s", VERSION);
+                if (result == REV) {
+                    OSCcreateMessage("/revision", "s", REVISION);
                 } else if (result == 30) {
                     shutdown();
-                } else if (result == 20) {
-                    ws2812_setleds_rgb(buf[19], buf[19+4], buf[19+8], 18);
-                } else if (result == 5 ) { 
+                } else if (result == LEDS) {
+                    createLedArray(ledar,buf[19], buf[19+4], buf[19+8], 18);  
+                    modifyLedArray(ledar, 18);
+                    ws2812_setleds(ledar, 18);
+                    //ws2812_setleds_rgb(buf[19], buf[19+4], buf[19+8], 18);
+                } else if (result == DEBUGON ) { 
                     DEBUG = true;
                     debputs(DEBUG, ">>> DEBUG MODE ON <<<");
-                    //createOSCMessage("/debug/on", "");
-                } else if (result == 6) {
+                    OSCcreateMessage("/debug/on", "");
+                } else if (result == DEBUGOFF) {
                     debputs(DEBUG, ">>> DEBUG MODE OFF <<<");
                     DEBUG = false;
-                    //createOSCMessage("/debug/off", "");
-                } else if (result == 7 ) {
+                    OSCcreateMessage("/debug/off", "");
+                } else if (result == RADIO_POWON ) {
                     //power up
                     si4735_powerup();
-                    //_delay_ms(100);
-                    setandsendfreq(position2freq(position));
-                } else if (result == 8) {
+                    _delay_ms(50);
+                    //setandsendfreq(position2freq(position));
+                    freq = position2freq(position);
+                } else if (result == RADIO_POWOFF) {
                     //power down
                     si4735_powerdown();
-                } else if (result == 9) {
+                } else if (result == RADIO_SEUP) {
                     //seek up
-                    getfreq(); //stop running seek..
-                    seekup();
-                } else if (result == 10) {
+                    si4735_getfreq(); //stop running seek..
+                    si4735_seekup();
+                } else if (result == RADIO_SEDOWN) {
                     //seek down
-                    getfreq(); //stop running seek..
-                    seekdown();
-               } else if (result == 2) {
-                    //stop_encoder();
+                    si4735_getfreq(); //stop running seek..
+                    si4735_seekdown();
+               } else if (result == RADIO_FREQ) {
                     if (stepper_state != STOPPED) {
                         stepper_state = RAMP_DOWN;
-                        _delay_ms(10);
+                        _delay_ms(50);
                     } 
                     freq = (uint16_t) (buf[26] << 8);
                     freq += buf[27];
                     turn(freq);
-                    //setfreq(freq);
-                } else if (result == 1 ) {
-                    //memcpy (buf , "/ping\0\0\0,\0\0\0\n", 13);
-                    //for (i = 0;i < 13; i++) uart_putc(buf[i]);
-                    //uart_puts("received osc /ping\n");
+                } else if (result == PING ) {
                     OSCcreateMessage("/ping", "");
-               } else if (result == 3) {
+               } else if (result == MIDI) {
                     midi_putc(buf[19]);
                     midi_putc(buf[19+4]);
                     midi_putc(buf[19+8]); 
-               } else if (result == 4) {
+               } else if (result == RADIO_FREQ_QUERY) {
                     //freq = getfreq();
                     OSCcreateMessage("/radio/frequency","i", (int32_t) freq);
                }

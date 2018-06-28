@@ -14,7 +14,7 @@
 
 #define DevSi4735  0x22      // device address of SI4735, see datasheet
 
-void setfreq(uint16_t freq) {
+void si4735_setfreq(uint16_t freq) {
     uint8_t h,l;
     i2c_start_wait(DevSi4735+I2C_WRITE);   // set device address and write mode
     i2c_write(0x20);                       // write command 
@@ -27,14 +27,14 @@ void setfreq(uint16_t freq) {
     i2c_stop();
 }
 
-void seekup(void) {
+void si4735_seekup(void) {
     i2c_start_wait(DevSi4735+I2C_WRITE);   
     i2c_write(0x21);                      
     i2c_write(0x08);
     i2c_stop();
 }
 
-void seekdown(void) {
+void si4735_seekdown(void) {
     i2c_start_wait(DevSi4735+I2C_WRITE);   
     i2c_write(0x21);                      
     i2c_write(0x00);
@@ -67,7 +67,7 @@ void si4735_powerdown(void) {
     i2c_stop();
 }  
 
-uint16_t getfreq(void) {
+uint16_t si4735_getfreq(void) {
     uint8_t freqh, freql;
 
     i2c_start_wait(DevSi4735+I2C_WRITE); 

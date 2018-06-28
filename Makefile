@@ -135,6 +135,7 @@ CPPDEFS = -DF_CPU=$(F_CPU)UL
 
 
 
+REVISION = $(shell git rev-parse --short HEAD)
 #---------------- Compiler Options C ----------------
 #  -g*:          generate debugging information
 #  -O*:          optimization level
@@ -160,7 +161,7 @@ CFLAGS += -Wundef
 CFLAGS += -Wa,-adhlns=$(<:%.c=$(OBJDIR)/%.lst)
 CFLAGS += $(patsubst %,-I%,$(EXTRAINCDIRS))
 CFLAGS += $(CSTANDARD)
-
+CFLAGS += -DREVISION=\"$(REVISION)\"
 
 #---------------- Compiler Options C++ ----------------
 #  -g*:          generate debugging information
@@ -398,7 +399,6 @@ lss: $(TARGET).lss
 sym: $(TARGET).sym
 LIBNAME=lib$(TARGET).a
 lib: $(LIBNAME)
-
 
 
 # Eye candy.

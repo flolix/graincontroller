@@ -9,9 +9,9 @@
 
 #include <stdint.h>
 
-void setfreq(uint16_t freq) ;
-void seekup(void) ;
-void seekdown(void) ;
+void si4735_setfreq(uint16_t freq) ;
+void si4735_seekup(void) ;
+void si4735_seekdown(void) ;
 uint8_t si4735_powerup(void) ;
 void si4735_powerdown(void) ;
-uint16_t getfreq(void) ;
+uint16_t si4735_getfreq(void) ;

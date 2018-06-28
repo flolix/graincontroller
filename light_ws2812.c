@@ -16,6 +16,54 @@
 #include <util/delay.h>
  
 // Setleds for standard RGB 
+struct cRGB * createLedArray(struct cRGB * a, uint8_t r,uint8_t g,uint8_t b, uint8_t leds) { 
+    uint8_t i;
+    for (i = 0; i< leds; i++) {
+        a[i].g = g; a[i].r = r; a[i].b = b;
+    }
+    return a;
+}
+
+uint8_t positive(int8_t v) {
+    if (v < 0) return 0;
+    return v;
+}
+
+void modifyLedArray(struct cRGB* ledarray, uint8_t leds) {
+    struct cRGBf weights[18] = {
+        {1,1 ,1}, //1
+        {1,1 ,1}, //2
+        {1,1 ,1}, //3
+        {1,1 ,1}, //4
+        {1,1 ,1}, //5
+        {1,1 ,1}, //6
+        {1,1 ,1}, //7
+        {1,1 ,1}, //8
+        {1,1 ,1}, //9
+        {1,1.9 ,1}, //10
+        {1,1.9 ,1}, //11
+        {1,1 ,1}, //12
+        {1,1 ,1}, //13
+        {1,1 ,1}, //14
+        {1,1 ,1}, //15
+        {1,1 ,1}, //16
+        {1,1 ,1}, //17
+        {1,1 ,1} //18
+    };
+
+    uint8_t i;
+    for (i = 0; i< leds; i++) {
+        //ledarray[i].r = positive(ledarray[i].r + weights[i].r);
+        //ledarray[i].g = positive(ledarray[i].g + weights[i].g);
+        //ledarray[i].b = positive(ledarray[i].b + weights[i].b);
+
+        ledarray[i].r *= weights[i].r;
+        ledarray[i].g *= weights[i].g;
+        ledarray[i].b *= weights[i].b;
+    }
+}
+        
+
 void inline ws2812_setleds(struct cRGB *ledarray, uint16_t leds)
 {
    ws2812_setleds_pin(ledarray,leds, _BV(ws2812_pin));
@@ -28,8 +76,8 @@ void inline ws2812_setleds_rgb(uint8_t r, uint8_t g, uint8_t b, uint16_t leds)
 
 void inline ws2812_setleds_pin_rgb(uint8_t r, uint8_t g, uint8_t b, uint16_t leds, uint8_t pinmask)
 {
-  ws2812_sendarray_mask_rgb(r,g,b,leds+leds+leds,pinmask);
-  _delay_us(ws2812_resettime);
+    ws2812_sendarray_mask_rgb(r,g,b,leds+leds+leds,pinmask);
+    _delay_us(ws2812_resettime);
 }
 
 

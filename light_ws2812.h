@@ -37,8 +37,11 @@
 struct cRGB  { uint8_t g; uint8_t r; uint8_t b; };
 struct cRGBW { uint8_t g; uint8_t r; uint8_t b; uint8_t w;};
 
+struct cRGBf  { float g; float r; float b; };
 
 
+struct cRGB * createLedArray(struct cRGB * a, uint8_t r,uint8_t g,uint8_t b, uint8_t leds);  
+void modifyLedArray(struct cRGB* ledarray, uint8_t leds);
 /* User Interface
  * 
  * Input:

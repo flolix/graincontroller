@@ -263,10 +263,6 @@ void turn(uint16_t freq) {
 
     //if (direction == -1) uart_puts("-1 \n");
     sei();
-    //debprintf(DEBUG, "direction %i", direction);
-    //debprintf(DEBUG, "endpos %i, position %i", endpos, position);
-    //_delay_ms(100);
-    //PORTB |= (1<< PD5);
     cli();
     stepenable(0b11);
     TIMSK0 |= 1<<OCIE0A;
@@ -383,9 +379,12 @@ uint8_t startdelay(void) {
         _delay_ms(166);
         i++;
     } 
+    ws2812_setleds_rgb(0,0,0,18);
     if (i <= 18) return 0;
     else return 1;
 }
+
+volatile uint8_t RUN;
 
 void startup(void) {
     peripherieturnon();
@@ -431,9 +430,9 @@ void startup(void) {
     //XXX wait for raspberry pi!
 
     OSCcreateMessage("/poweredup", "");    
+    RUN = 1;
 }
 
-volatile uint8_t RUN;
 
 void sleep(void) {
         DDRD &= ~(1 << PD2);        // its an input
@@ -441,6 +440,7 @@ void sleep(void) {
         EIMSK |= (1 << INT0);            // externen Interrupt freigeben
         set_sleep_mode(SLEEP_MODE_PWR_DOWN);
         RUN = 0;
+        ws2812_setleds_rgb(0,0,0,18);
         ws2812_setleds_rgb(0,0,20,1);
         sleep_mode();                 
 }
@@ -451,7 +451,7 @@ void shutdown(void) {
     si4735_powerdown();
 
     //auschaltmessage an maxmsp
-    OSCcreateMessage("/*/shuttingdown", "");
+    OSCcreateMessage("/shuttingdown", "");
 
     //ausschaltmessage an raspberry
     OSCcreateMessage("/raspberry/shutdown", "");
@@ -459,11 +459,11 @@ void shutdown(void) {
     
     peripherieturnoff();
 
-    ws2812_setleds_rgb(0,0,0,18);
     sleep();
 }
 
 
+struct cRGB ledar[18];
 
 ISR(INT0_vect) {
     // aha, das reed relais wurde gedrückt..
@@ -471,7 +471,7 @@ ISR(INT0_vect) {
     EIMSK &= ~(1 << INT0);           // externen Interrupt sperren
     sei();
    
-    if (startdelay() == 1) {
+    if (startdelay()) {
         sei();
         if (RUN) shutdown();
         if (!RUN) soft_reset();
@@ -479,13 +479,13 @@ ISR(INT0_vect) {
     sei();
     if (!RUN) sleep();          //still sleepy
     //back to normal
-    ws2812_setleds_rgb(0,0,0,18);
+    ws2812_setleds(ledar, 18);
+    //ws2812_setleds_rgb(0,0,0,18);
     EIMSK |= (1 << INT0);            // externen Interrupt freigeben
 }
 
 int main(void) {
     MCUSR = 0;
-    RUN = 1;
     wdt_disable();
 
     unsigned int c;
@@ -495,7 +495,6 @@ int main(void) {
 
     startup();
     //struct cRGB * ledar = malloc(18+18+18);
-    struct cRGB ledar[18];
 
     int8_t STATION_UPDATED = 0;
     //main loop

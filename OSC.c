@@ -33,7 +33,7 @@ void OSCcreateMessage(char * command, char * paramlist, ...) {
 
     msglength = OSCformatstring(command, &buf[0]);
 
-    strcat(pl, paramlist); 
+    if (paramlist[0] == ',') strcpy(pl,paramlist); else strcat(pl, paramlist); 
     msglength  += OSCformatstring(pl, &buf[msglength]);
     int8_t j;
     for (i = 0; i< anzahl; i++) {

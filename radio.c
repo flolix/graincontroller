@@ -99,7 +99,7 @@ ISR( TIMER2_COMPA_vect )
         PRESC1--;
         if (!PRESC1) {
             //ca. 5 Hz
-            PRESC1 = 10;
+            PRESC1 = 5;
             PLEASE_UPDATE_STATION = 1;
         }
     }  
@@ -386,6 +386,8 @@ uint8_t startdelay(void) {
 
 volatile uint8_t RUN;
 
+struct cRGB ledar[18];
+
 void startup(void) {
     peripherieturnon();
 
@@ -422,14 +424,17 @@ void startup(void) {
     }
 
     //turn(8880);
-    DDRD &= ~(1 << PD2);        // its an input
-    PORTD |= (1 << PD2);                // pull up für reed eingang
-    EIMSK |= (1 << INT0);            // externen Interrupt freigeben
-    
+   
     //everything done
     //XXX wait for raspberry pi!
 
+                     createLedArray(ledar,20 ,0,0 , 18);  
+                    modifyLedArray(ledar, 18);
+                    ws2812_setleds(ledar, 18);
     OSCcreateMessage("/poweredup", "");    
+     DDRD &= ~(1 << PD2);        // its an input
+    PORTD |= (1 << PD2);                // pull up für reed eingang
+    EIMSK |= (1 << INT0);            // externen Interrupt freigeben
     RUN = 1;
 }
 
@@ -463,7 +468,6 @@ void shutdown(void) {
 }
 
 
-struct cRGB ledar[18];
 
 ISR(INT0_vect) {
     // aha, das reed relais wurde gedrückt..
@@ -505,7 +509,7 @@ int main(void) {
             int8_t diff = runden(position2freq(position)) - freq;
             sei();
             if (diff != 0) {
-                STATION_UPDATED = 10;
+                STATION_UPDATED = 8;
                 freq = runden(position2freq(position));
                 si4735_setfreq(freq);
             } else {

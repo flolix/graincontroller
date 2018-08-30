@@ -28,10 +28,11 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
-#define UART_BAUD_RATE 38400  // Baudrate
-
-#define PHASE_A     (PIND & 1<<PD3)
-#define PHASE_B     (PIND & 1<<PD4)
+#define UART1_BAUD_RATE 31250 // midi Baudrate
+#define UART0_BAUD_RATE 38400  // Baudrate
+#define REED_SWITCH PD2
+#define ENC_PHASE_A     (PIND & 1<<PD3)
+#define ENC_PHASE_B     (PIND & 1<<PD4)
 
 
 uint8_t DEBUG = 1;
@@ -45,13 +46,16 @@ volatile uint16_t freq;
 
 //using timer2
 void encode_init( void ) {
+    DDRD &= ~(1 << PD3) & ~(1 << PD4);
+    PORTD |= (1 << PD3) | (1 << PD4);
   int8_t new;
   new = 0;
   last = new;                   // power on state
   enc_delta = 0;
   TCCR2A |= (1<<WGM21);
   TCCR2B |= (1<<CS22);   // CTC, prescaler 64
-  OCR2A = 40;  // ca. 3 kHz
+  //OCR2A = 40;  // ca. 3 kHz
+  OCR2A = 5;  // ca. 3 kHz
   TIMSK2 |= 1<<OCIE2A;
 }
 
@@ -77,16 +81,19 @@ uint8_t volatile PLEASE_UPDATE_STATION = 0;
 ISR( TIMER2_COMPA_vect )         
 {
   int8_t new, diff;
+  //static uint8_t PRESC = 120;
   static uint8_t PRESC = 120;
+  //static uint8_t PRESC1 = 10;
   static uint8_t PRESC1 = 10;
 
   new = 0;
-  if( PHASE_A ) new = 3;
-  if( PHASE_B ) new ^= 1;          // convert gray to binary
+  if( ENC_PHASE_A ) new = 3;
+  if( ENC_PHASE_B ) new ^= 1;          // convert gray to binary
   diff = last - new;               // difference last - new
   if( diff & 1 ) {                 // bit 0 = value (1)
     last = new;                    // store new as next last
     enc_delta -= (diff & 2) - 1;   // bit 1 = direction (+/-)
+    //enc_delta = (diff & 2) -1;
   }
 
     PRESC--;
@@ -99,14 +106,14 @@ ISR( TIMER2_COMPA_vect )
         PRESC1--;
         if (!PRESC1) {
             //ca. 5 Hz
-            PRESC1 = 5;
+            PRESC1 = 10;
             PLEASE_UPDATE_STATION = 1;
         }
     }  
 }
 
 
-enum commands { NOCOMMAND, RADIO_FREQ, RADIO_FREQ_QUERY, PING, MIDI, DEBUGON, DEBUGOFF, RADIO_POWON, RADIO_POWOFF,RADIO_SEUP, RADIO_SEDOWN, LEDS, SHUTDOWN, REV, FAILURE }; 
+enum commands { NOCOMMAND, RADIO_FREQ, RADIO_FREQ_QUERY, PING, MIDI, DEBUGON, DEBUGOFF, RADIO_POWON, RADIO_POWOFF,RADIO_SEUP, RADIO_SEDOWN, LEDS, SHUTDOWN, REV, RSH, FAILURE }; 
 
 uint8_t get_command(char * buf) {
     //debputs(DEBUG, "in get command");
@@ -137,6 +144,8 @@ uint8_t get_command(char * buf) {
             command = SHUTDOWN;
         }  else if (memcmp(buf, "/revision", 9) == 0) {
             command = REV;
+        } else if (memcmp(buf, "/rsh",4) == 0) {
+            command == RSH; 
         }
     return command;
 } 
@@ -205,24 +214,30 @@ uint8_t parseOSCchar(char c) {
     return done;
 }
 
-#include "suart.h"
-#define STXD    SBIT( PORTB, PB1)
+//#include "suart.h"
+//#define STXD    SBIT( PORTB, PB1)
 
 void midi_putc(char c) {
-    uputchar(c);
+    //uputchar(c);
+    uart1_putc(c);
 }
 
 
 void init_stepper(void) {
-    DDRC |= 0b1111;
-    PORTB &= 0b11110000;
-    DDRB |= (1<<PB5) | (1 << PB4);
-    PORTB &= ~(1<<PB5);
-    PORTB &= ~(1<<PB4);
+    //set driver output direction
+    DDRC |= (1 << PC3) | (1<<PC2) | (1<<PC1) | (1<<PC0);
+    //set driver enable direction
+    DDRB |= (1<<PB0) | (1 << PB1);
+
+    //clear output port
+    PORTC &= ~(1 << PC3) & ~(1<<PC2) & ~(1<<PC1) & ~(1<<PC0);
+    //clear enable port
+    PORTB &= ~(1<<PB0);
+    PORTB &= ~(1<<PB1);
+
     TCCR0A |= (1<<WGM01);
     //prescaler 256
     TCCR0B |= (1<<CS02);
-
     TCCR0B |= (1<<CS00);    //damit prescaler 1024
     //OCR0A = 255; // bisher
     OCR0A = 90; //speedtest;
@@ -233,8 +248,8 @@ volatile int8_t direction;
 volatile int16_t endpos = 0;
 
 void stepenable(uint8_t en) {
-    uint8_t portb = PORTB & 0b11001111; 
-    PORTB = portb | (en << 4);
+    uint8_t portb = PORTB & 0b11111100; 
+    PORTB = portb | en ;
 }
 
 enum {STOPPED, RAMP_UP, RAMP_DOWN, RUNNING};
@@ -242,31 +257,38 @@ volatile uint8_t stepper_state = STOPPED;
 volatile uint8_t speed = 0;
 volatile uint16_t ramppos = 0;
 
+volatile uint8_t RADIO_THERE = 0;
+uint8_t ENCODER_THERE = 1;
+uint8_t RASPBERRY_THERE = 0;
+
 void turn(uint16_t freq) {
-    stepper_state = RAMP_UP;
-    speed = 0;
-    debputs(DEBUG, "in turn");
-    //_delay_ms(100);
-    cli();
-    endpos = freq2position(freq);
-    //stop_encoder();
-    if (endpos < position) direction = -1; else direction = 1;
-    ramppos = endpos + direction * (-1) * 100;
+    if (ENCODER_THERE == 1) {
+        stepper_state = RAMP_UP;
+        speed = 0;
+        //debputs(DEBUG, "in turn");
+        //_delay_ms(100);
+        cli();
+        endpos = freq2position(freq);
+        debprintf(DEBUG, "turn to freq %i, endpos %i, position %i", freq, endpos, position);
+        //stop_encoder();
+        if (endpos < position) direction = -1; else direction = 1;
+        ramppos = endpos + direction * (-1) * 100;
 
-    switch (direction) {
-        case -1:
-            if (ramppos > position) ramppos = position;
-            break;
-        case 1:
-            if (ramppos < position) ramppos = position;
+        switch (direction) {
+            case -1:
+                if (ramppos > position) ramppos = position;
+                break;
+            case 1:
+                if (ramppos < position) ramppos = position;
+        }
+
+        //if (direction == -1) uart_puts("-1 \n");
+        sei();
+        cli();
+        stepenable(0b11);
+        TIMSK0 |= 1<<OCIE0A;
+        sei();
     }
-
-    //if (direction == -1) uart_puts("-1 \n");
-    sei();
-    cli();
-    stepenable(0b11);
-    TIMSK0 |= 1<<OCIE0A;
-    sei();
 }
 
 
@@ -274,7 +296,7 @@ void turn(uint16_t freq) {
 //                    AaBb
 //uint8_t steps[4] = {0b1010, 0b1001, 0b0101, 0b0110};
 //                    2       1       0        3
-uint8_t steps[4] = { 0b0110,0b1010,0b1001,  0b0101};
+uint8_t steps[4] = { 0b0110, 0b1010, 0b1001, 0b0101};
 //uint8_t steps[8] = {0b1001, 0b1000, 0b1010, 0b0010, 0b0110,0b0100, 0b0101, 0b0001};
 //uint8_t steps_enable[8] = {0b11, 0b10, 0b11, 0b01, 0b11, 0b10, 0b11, 0b01};
 uint8_t steps_enable[8] = {0b11, 0b01, 0b11, 0b10, 0b11, 0b01, 0b11, 0b10};
@@ -283,8 +305,6 @@ uint8_t steps_enable[8] = {0b11, 0b01, 0b11, 0b10, 0b11, 0b01, 0b11, 0b10};
 //000011
 //110000
 
-
-volatile uint8_t RADIO_THERE = 0;
 
 void stepper_stop(void) {
     TIMSK0 &= ~(1<<OCIE0A);
@@ -334,8 +354,8 @@ ISR (TIMER0_COMPA_vect) {
 
 
     if (stepper_state == STOPPED) {
-        debprintf(DEBUG,"reached %i", position);
         stepper_stop();
+        debprintf(DEBUG,"reached %i", position);
         return;
     } 
 
@@ -347,26 +367,49 @@ ISR (TIMER0_COMPA_vect) {
 }
 
 
-void peripherieturnon(void) {
-    DDRD |= (1 << PD5);
-    PORTD |= (1 << PD5);
-}
-
-void peripherieturnoff(void) {
-    PORTD &= ~(1 << PD5);
-}
-
-void gatheringhome(void) {
-    debputs(DEBUG, "gathering home");
+void homing(void) {
+   int16_t savepos; 
+    debputs(DEBUG, "homing");
     position = freq2position(10800);
     turn(8590); //will never reach..
     _delay_ms(3000);
     stepper_stop(); 
     _delay_ms(50);
-    position = freq2position(8590); //ganze linke home position
-    freq = 8750;
-    turn(8750);
+
+    //now check for encoder
+    position = freq2position(8590);
+    savepos = position;
+    turn(8610); 
     _delay_ms(3000);
+    stepper_stop(); 
+    _delay_ms(100);
+    debprintf(DEBUG, "in homing, position %i", position);
+    if (position < savepos +5) {
+        ENCODER_THERE = 0;
+        debputs(DEBUG, "no encoder available!");
+        ws2812_setleds_rgb(0,50,0,9);
+        //_delay_ms(400);
+        //stepper_stop();
+        //_delay_ms(50);
+        
+        //position = freq2position(8610);
+        //turn(8590);
+        //_delay_ms(500);
+        //stepper_stop();
+        //position = freq2position(8590);
+        freq = 8750; 
+        
+        //no encoder there
+        PLEASE_UPDATE_STATION = 1;
+    } else {
+        ENCODER_THERE = 1;
+        //freq = 8550;
+        position = freq2position(8610); //ganze linke home position
+        freq = 7000;
+        turn(8750);
+    }
+
+    //_delay_ms(3000);
 }
 
 
@@ -388,22 +431,67 @@ volatile uint8_t RUN;
 
 struct cRGB ledar[18];
 
-void startup(void) {
-    peripherieturnon();
 
-    cli();
-    uart_init (UART_BAUD_SELECT(UART_BAUD_RATE, F_CPU) );
-    suart_init();
-    sei();
+#define switch_low_active
+void switch_turnoff(void) {
+    #ifdef switch_low_active
+    PORTD |= (1 << PD5);
+    #else
+    PORTD &= ~(1 << PD5);
+    #endif
+}
+
+void switch_init(void) {
+    DDRD |= (1<< PD5);
+    switch_turnoff();
+}
+
+void switch_turnon(void) {
+    #ifdef switch_low_active
+    PORTD &= ~(1 << PD5);
+    #else
+    PORTD |= (1 << PD5);
+    #endif
+}
+void reed_init(void) {
+    DDRD &= ~(1 << PD2);        // its an input
+    PORTD |= (1 << PD2);                // pull up für reed eingang
+    EIMSK |= (1 << INT0);            // externen Interrupt freigeben
+}
+
+int TWEN = 2;
+ 
+void startup(void) {
+    switch_init();
+    switch_turnon();
+    ws2812_setleds_rgb(0,0,0,18);
+    init_stepper();                         //stepper init
+    _delay_ms(100);
+
+    //cli();
+    uart_init (UART_BAUD_SELECT(UART0_BAUD_RATE, F_CPU) );
+
+    uart1_init (UART_BAUD_SELECT(UART1_BAUD_RATE, F_CPU));
+    uart1_putc (144 );
+    uart1_putc (64 );
+    uart1_putc (127 );
+    //suart_init();
+
+    //sei();
 
     i2c_init();                             // initialize I2C library
     //PORTC |= (1<< PC4) | (1 << PC5);        // using the internal pull ups!
-    
-    init_stepper();                         //stepper init
+   
 
     encode_init();                          //encoder init
 
-    gatheringhome();                        //home position finden
+    //_delay_ms(100);
+    //si4735_powerup();
+    //_delay_ms(100);
+    //si4735_setfreq(8880);
+    //for (;;) ;
+
+    homing();                        //home position finden
 
 
     uint8_t erg = si4735_powerup();                        // radio einschalten
@@ -419,22 +507,23 @@ void startup(void) {
         //freq = 8880;
     } else {
         debputs(DEBUG, "ERROR: Could not connect to radio chip.");
+        ws2812_setleds_rgb(0,0,0,18);
         ws2812_setleds_rgb(50, 0, 0, 9);
-        for (;;);
+        //for (;;);
     }
 
     //turn(8880);
    
     //everything done
     //XXX wait for raspberry pi!
+    
+
 
                      createLedArray(ledar,20 ,0,0 , 18);  
                     modifyLedArray(ledar, 18);
                     ws2812_setleds(ledar, 18);
-    OSCcreateMessage("/poweredup", "");    
-     DDRD &= ~(1 << PD2);        // its an input
-    PORTD |= (1 << PD2);                // pull up für reed eingang
-    EIMSK |= (1 << INT0);            // externen Interrupt freigeben
+
+    reed_init();
     RUN = 1;
 }
 
@@ -462,7 +551,7 @@ void shutdown(void) {
     OSCcreateMessage("/raspberry/shutdown", "");
     _delay_ms(3000);
     
-    peripherieturnoff();
+    switch_turnoff();
 
     sleep();
 }
@@ -501,6 +590,7 @@ int main(void) {
     //struct cRGB * ledar = malloc(18+18+18);
 
     int8_t STATION_UPDATED = 0;
+DDRD |= (1<<PD7);
     //main loop
     for (;;) {
         if (PLEASE_UPDATE_STATION) {
@@ -509,7 +599,8 @@ int main(void) {
             int8_t diff = runden(position2freq(position)) - freq;
             sei();
             if (diff != 0) {
-                STATION_UPDATED = 8;
+                PIND |= (1<<PD7);
+                STATION_UPDATED = 20;
                 freq = runden(position2freq(position));
                 si4735_setfreq(freq);
             } else {
@@ -533,7 +624,12 @@ int main(void) {
                 if (result != 0) {
                     debprintf(DEBUG, "command %i received", result);
                 }
-                if (result == REV) {
+                if (result == RSH) {
+                    if (!RASPBERRY_THERE) {
+                        RASPBERRY_THERE = 1;
+                        OSCcreateMessage("/poweredup", "");    
+                    }
+                } else if (result == REV) {
                     OSCcreateMessage("/revision", "s", REVISION);
                 } else if (result == 30) {
                     shutdown();

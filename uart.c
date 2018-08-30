@@ -231,6 +231,41 @@ LICENSE:
  #define UART0_BIT_TXEN    TXEN0
  #define UART0_BIT_UCSZ0   UCSZ00
  #define UART0_BIT_UCSZ1   UCSZ01
+#elif defined(__AVR_ATmega328PB__)
+ /* ATmega with two USARTs */
+ #define ATMEGA_USART1
+ #define UART0_RECEIVE_INTERRUPT   USART0_RX_vect
+ #define UART0_TRANSMIT_INTERRUPT  USART0_UDRE_vect
+ #define UART0_STATUS      UCSR0A
+ #define UART0_CONTROL     UCSR0B
+ #define UART0_CONTROLC    UCSR0C
+ #define UART0_DATA        UDR0
+ #define UART0_UDRIE       UDRIE0
+ #define UART0_UBRRL       UBRR0L
+ #define UART0_UBRRH       UBRR0H
+ #define UART0_BIT_U2X     U2X0
+ #define UART0_BIT_RXCIE   RXCIE0
+ #define UART0_BIT_RXEN    RXEN0
+ #define UART0_BIT_TXEN    TXEN0
+ #define UART0_BIT_UCSZ0   UCSZ00
+ #define UART0_BIT_UCSZ1   UCSZ01
+ #define UART1_RECEIVE_INTERRUPT   USART1_RX_vect
+ #define UART1_TRANSMIT_INTERRUPT  USART1_UDRE_vect
+ #define UART1_STATUS      UCSR1A
+ #define UART1_CONTROL     UCSR1B
+ #define UART1_CONTROLC    UCSR1C
+ #define UART1_DATA        UDR1
+ #define UART1_UDRIE       UDRIE1
+ #define UART1_UBRRL       UBRR1L
+ #define UART1_UBRRH       UBRR1H
+ #define UART1_BIT_U2X     U2X1
+ #define UART1_BIT_RXCIE   RXCIE1
+ #define UART1_BIT_RXEN    RXEN1
+ #define UART1_BIT_TXEN    TXEN1
+ #define UART1_BIT_UCSZ0   UCSZ10
+ #define UART1_BIT_UCSZ1   UCSZ11
+
+ #define nothing
 #elif defined(__AVR_ATtiny2313__) || defined(__AVR_ATtiny2313A__) || defined(__AVR_ATtiny4313__)
  /* ATtiny with one USART */
  #define UART0_RECEIVE_INTERRUPT   USART_RX_vect

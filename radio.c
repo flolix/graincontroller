@@ -35,7 +35,7 @@
 #define ENC_PHASE_B     (PIND & 1<<PD4)
 
 
-uint8_t DEBUG = 1;
+uint8_t DEBUG = 0;
 //uint8_t DEBUG = false;
 
 volatile int8_t enc_delta;          // -128 ... 127
@@ -625,10 +625,8 @@ DDRD |= (1<<PD7);
                     debprintf(DEBUG, "command %i received", result);
                 }
                 if (result == RSH) {
-                    if (!RASPBERRY_THERE) {
-                        RASPBERRY_THERE = 1;
-                        OSCcreateMessage("/poweredup", "");    
-                    }
+                    RASPBERRY_THERE = 1;
+                    OSCcreateMessage("/csh", "");    
                 } else if (result == REV) {
                     OSCcreateMessage("/revision", "s", REVISION);
                 } else if (result == 30) {
